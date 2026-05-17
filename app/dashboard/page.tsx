@@ -7,12 +7,11 @@ import api from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { KpiCard, TrendPill } from '@/components/shared/KpiCard';
 import {
   AlertTriangle,
   Archive,
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   Calendar,
   Clock,
   CreditCard,
@@ -262,34 +261,6 @@ const TONE: Record<string, { bg: string; fg: string; ring: string; dot: string }
   slate:   { bg: 'bg-slate-100',  fg: 'text-slate-600',   ring: 'ring-slate-200',   dot: 'bg-slate-500' },
 };
 
-function KpiCard({
-  icon: Icon,
-  tone,
-  label,
-  value,
-  footer,
-}: {
-  icon: LucideIcon;
-  tone: keyof typeof TONE;
-  label: string;
-  value: string;
-  footer?: React.ReactNode;
-}) {
-  const t = TONE[tone];
-  return (
-    <Card className="group relative overflow-hidden border-slate-200 p-5 transition hover:shadow-md">
-      <div className="flex items-start justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-        <span className={cn('grid h-9 w-9 place-items-center rounded-lg ring-1 ring-inset', t.bg, t.fg, t.ring)}>
-          <Icon className="h-[18px] w-[18px]" />
-        </span>
-      </div>
-      <div className="mt-3 text-[28px] font-bold tracking-tight text-slate-900 leading-none">{value}</div>
-      {footer && <div className="mt-3">{footer}</div>}
-    </Card>
-  );
-}
-
 function KpiSkeleton() {
   return (
     <Card className="p-5">
@@ -329,23 +300,6 @@ function MiniStat({
         </p>
       </div>
     </Card>
-  );
-}
-
-function TrendPill({ value, suffix }: { value: number; suffix?: string }) {
-  if (!value) return null;
-  const positive = value > 0;
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
-        positive ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-      )}
-    >
-      {positive ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
-      {Math.abs(value)}
-      {suffix ?? '%'}
-    </span>
   );
 }
 
