@@ -120,3 +120,97 @@
     @apply bg-muted-foreground/40;
   }
 }
+
+/* ============================================================
+   Landing page animations
+   ============================================================ */
+@layer utilities {
+  @keyframes ls-wheel-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes ls-road-dash {
+    from { background-position-x: 0; }
+    to   { background-position-x: -120px; }
+  }
+  @keyframes ls-car-bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-2px); }
+  }
+  @keyframes ls-drive-across {
+    0%   { transform: translateX(-30%); }
+    100% { transform: translateX(120%); }
+  }
+  @keyframes ls-float-slow {
+    0%, 100% { transform: translate(0, 0); }
+    50%      { transform: translate(20px, -10px); }
+  }
+  @keyframes ls-float-med {
+    0%, 100% { transform: translate(0, 0); }
+    50%      { transform: translate(-25px, 15px); }
+  }
+  @keyframes ls-fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes ls-blob {
+    0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+    50%      { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+  }
+  @keyframes ls-pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55); }
+    70%  { box-shadow: 0 0 0 22px rgba(37, 99, 235, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+  }
+  @keyframes ls-marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  @keyframes ls-shimmer {
+    from { background-position: -200% 0; }
+    to   { background-position: 200% 0; }
+  }
+
+  .ls-wheel       { animation: ls-wheel-spin 0.9s linear infinite; transform-origin: center; transform-box: fill-box; }
+  .ls-wheel-fast  { animation: ls-wheel-spin 0.45s linear infinite; transform-origin: center; transform-box: fill-box; }
+  .ls-car         { animation: ls-car-bob 1.2s ease-in-out infinite; }
+  .ls-drive       { animation: ls-drive-across 14s linear infinite; }
+  .ls-drive-slow  { animation: ls-drive-across 24s linear infinite; }
+  .ls-cloud-slow  { animation: ls-float-slow 9s ease-in-out infinite; }
+  .ls-cloud-med   { animation: ls-float-med 7s ease-in-out infinite; }
+  .ls-blob        { animation: ls-blob 14s ease-in-out infinite; }
+  .ls-pulse-ring  { animation: ls-pulse-ring 2.2s ease-out infinite; }
+  .ls-marquee     { animation: ls-marquee 40s linear infinite; }
+  .ls-shimmer {
+    background: linear-gradient(110deg, transparent 35%, rgba(255,255,255,0.85) 50%, transparent 65%);
+    background-size: 200% 100%;
+    animation: ls-shimmer 2.6s linear infinite;
+  }
+
+  .ls-road {
+    background-image: linear-gradient(to right, #fbbf24 0 60px, transparent 60px 120px);
+    background-repeat: repeat-x;
+    background-size: 120px 6px;
+    background-position-y: center;
+    animation: ls-road-dash 0.6s linear infinite;
+  }
+
+  .ls-reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+  }
+  .ls-reveal.is-in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ls-wheel, .ls-wheel-fast, .ls-car, .ls-drive, .ls-drive-slow,
+    .ls-cloud-slow, .ls-cloud-med, .ls-blob, .ls-pulse-ring,
+    .ls-marquee, .ls-shimmer, .ls-road {
+      animation: none !important;
+    }
+    .ls-reveal { opacity: 1; transform: none; transition: none; }
+  }
+}
