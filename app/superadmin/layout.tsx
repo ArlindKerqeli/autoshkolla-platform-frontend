@@ -90,7 +90,7 @@ function SuperAdminSidebar({ onClose }: { onClose?: () => void }) {
       {/* Footer */}
       <div className="border-t border-white/10 px-4 py-3">
         <p className="text-[11px] text-slate-500 text-center">
-          AutoShkolla Pro v1.0
+          AutoShkolla Platform v1.0
         </p>
       </div>
     </div>

@@ -77,7 +77,7 @@ export default function LoginPage() {
           </div>
           <div>
             <CardTitle className="text-2xl font-bold tracking-tight">
-              AutoShkolla Pro
+              AutoShkolla Platform
             </CardTitle>
             <CardDescription className="mt-1 text-sm">
               Sistemi i menaxhimit te autoshkolles

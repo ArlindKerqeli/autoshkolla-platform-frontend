@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate PWA icons for AutoShkolla Pro
+Generate PWA icons for AutoShkolla Platform
 Creates square icons with blue background and white text
 Also creates maskable variants for modern PWA support
 """

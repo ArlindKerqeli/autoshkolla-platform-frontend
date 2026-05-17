@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-**autoshkolla-platform-frontend** — Next.js 14 (App Router) + TypeScript frontend for AutoShkolla Pro, a multi-tenant driving school management SaaS for Kosovo. **All UI text is in Albanian (Kosovo dialect).** Deploys to Vercel.
+**autoshkolla-platform-frontend** — Next.js 14 (App Router) + TypeScript frontend for AutoShkolla Platform, a multi-tenant driving school management SaaS for Kosovo. **All UI text is in Albanian (Kosovo dialect).** Deploys to Vercel.
 
 The Flask backend lives in a separate sibling repo, **autoshkolla-platform-backend**. The parent folder `~/Desktop/autoshkolla-platform/` is not itself a git repo — it just holds the two child repos side by side, with a top-level `CLAUDE.md` covering the cross-repo workspace.
 

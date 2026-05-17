@@ -17,7 +17,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'AutoShkolla Pro',
+  title: 'AutoShkolla Platform',
   description: 'Sistemi i menaxhimit te autoshkolles',
   manifest: '/manifest.json',
   appleWebApp: {

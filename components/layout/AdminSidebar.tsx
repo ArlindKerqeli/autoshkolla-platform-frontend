@@ -131,7 +131,7 @@ export function AdminSidebar({ collapsed, onToggle, schoolName }: AdminSidebarPr
                 <GraduationCap className="h-5 w-5 text-white" />
               </div>
               <div className="min-w-0">
-                <span className="text-sm font-bold text-white leading-tight block truncate">{schoolName || 'AutoShkolla Pro'}</span>
+                <span className="text-sm font-bold text-white leading-tight block truncate">{schoolName || 'AutoShkolla Platform'}</span>
                 <span className="text-[11px] text-slate-400 leading-tight block">Menaxhimi i Shkollës</span>
               </div>
             </div>
@@ -216,7 +216,7 @@ export function AdminSidebar({ collapsed, onToggle, schoolName }: AdminSidebarPr
         {!collapsed && (
           <div className="border-t border-white/10 px-4 py-3">
             <p className="text-[11px] text-slate-500 text-center">
-              AutoShkolla Pro v1.0
+              AutoShkolla Platform v1.0
             </p>
           </div>
         )}

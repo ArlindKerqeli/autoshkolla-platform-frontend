@@ -108,7 +108,7 @@ export function InstructorSidebar({ schoolName }: InstructorSidebarProps) {
         </div>
         <div>
           <h1 className="text-sm font-bold text-white leading-tight truncate">
-            {schoolName || 'AutoShkolla Pro'}
+            {schoolName || 'AutoShkolla Platform'}
           </h1>
           <p className="text-[11px] text-slate-400 leading-tight">
             Portali i Instruktorit
@@ -166,7 +166,7 @@ export function InstructorSidebar({ schoolName }: InstructorSidebarProps) {
       {/* Footer */}
       <div className="border-t border-white/10 px-5 py-3">
         <p className="text-[11px] text-slate-500 text-center">
-          AutoShkolla Pro v1.0
+          AutoShkolla Platform v1.0
         </p>
       </div>
     </aside>
