@@ -22,6 +22,7 @@ import {
   ChevronDown,
   ChevronLeft,
   GraduationCap,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -163,6 +164,11 @@ export function AdminSidebar({ collapsed, onToggle, schoolName }: AdminSidebarPr
             <SidebarLink
               item={{ label: 'Paneli', icon: LayoutDashboard, path: '/dashboard' }}
               isActive={pathname === '/dashboard'}
+              collapsed={collapsed}
+            />
+            <SidebarLink
+              item={{ label: 'Alarmet', icon: AlertTriangle, path: '/dashboard/alarmet' }}
+              isActive={isActive('/dashboard/alarmet')}
               collapsed={collapsed}
             />
 
