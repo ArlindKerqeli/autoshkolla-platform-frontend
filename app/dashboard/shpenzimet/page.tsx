@@ -1,43 +1,48 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ColumnDef } from '@tanstack/react-table';
-import { format } from 'date-fns';
+import { format, startOfMonth, startOfWeek, startOfYear, subDays } from 'date-fns';
 import {
-  Plus,
-  Pencil,
-  Trash2,
-  Receipt,
+  Calendar as CalendarIcon,
   Car,
-  Tag,
+  Pencil,
+  Plus,
+  Receipt,
+  Search,
   Settings2,
+  Tag,
+  Trash2,
+  X,
 } from 'lucide-react';
 import api from '@/lib/api';
-import { formatDate, formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import type {
   Expense,
-  ExpenseType,
-  Vehicle,
   ExpenseSummary,
+  ExpenseType,
   PaginatedResponse,
+  Vehicle,
 } from '@/lib/types';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { Badge } from '@/components/ui/badge';
+import { ExportButton } from '@/components/shared/ExportButton';
+import { KpiCard } from '@/components/shared/KpiCard';
+import { FilterChip } from '@/components/shared/FilterChip';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -46,16 +51,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { ExportButton } from '@/components/shared/ExportButton';
 
-function getDefaultDateRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  return {
-    startDate: format(start, 'yyyy-MM-dd'),
-    endDate: format(now, 'yyyy-MM-dd'),
-  };
+/* ────────────────────────────────────────────────────────────────────────── */
+
+type RangePreset = 'today' | 'week' | 'month' | 'thirty' | 'year' | 'custom';
+
+const PRESETS: { id: RangePreset; label: string }[] = [
+  { id: 'today',  label: 'Sot' },
+  { id: 'week',   label: 'Java' },
+  { id: 'month',  label: 'Muaji' },
+  { id: 'thirty', label: '30 ditë' },
+  { id: 'year',   label: 'Viti' },
+];
+
+function rangeFor(preset: RangePreset): { startDate: string; endDate: string } {
+  const today = new Date();
+  const end = format(today, 'yyyy-MM-dd');
+  let start = today;
+  switch (preset) {
+    case 'today':  start = today; break;
+    case 'week':   start = startOfWeek(today, { weekStartsOn: 1 }); break;
+    case 'month':  start = startOfMonth(today); break;
+    case 'thirty': start = subDays(today, 29); break;
+    case 'year':   start = startOfYear(today); break;
+    case 'custom': return { startDate: end, endDate: end };
+  }
+  return { startDate: format(start, 'yyyy-MM-dd'), endDate: end };
+}
+
+function unwrapList<T>(raw: unknown): T[] {
+  let list: unknown = raw;
+  for (let i = 0; i < 3; i += 1) {
+    if (Array.isArray(list)) break;
+    if (list && typeof list === 'object' && 'data' in list) {
+      list = (list as { data: unknown }).data;
+    } else break;
+  }
+  return (Array.isArray(list) ? list : []) as T[];
 }
 
 interface ExpenseFormData {
@@ -74,51 +106,51 @@ const emptyExpenseForm: ExpenseFormData = {
   description: '',
 };
 
-interface ExpenseTypeFormData {
-  name: string;
-  isActive: boolean;
-}
-
-const emptyTypeForm: ExpenseTypeFormData = {
-  name: '',
-  isActive: true,
-};
+/* ────────────────────────────────────────────────────────────────────────── */
 
 export default function ShpenzimetPage() {
   const queryClient = useQueryClient();
-  const defaults = getDefaultDateRange();
-  const [startDate, setStartDate] = useState(defaults.startDate);
-  const [endDate, setEndDate] = useState(defaults.endDate);
+
+  const initial = rangeFor('month');
+  const [preset, setPreset] = useState<RangePreset>('month');
+  const [startDate, setStartDate] = useState(initial.startDate);
+  const [endDate, setEndDate] = useState(initial.endDate);
+
   const [vehicleFilter, setVehicleFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // Expense form dialog
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [expenseForm, setExpenseForm] = useState<ExpenseFormData>(emptyExpenseForm);
-
-  // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
 
-  // Expense types management
-  const [typesDialogOpen, setTypesDialogOpen] = useState(false);
-  const [typeFormOpen, setTypeFormOpen] = useState(false);
-  const [editingType, setEditingType] = useState<ExpenseType | null>(null);
-  const [typeForm, setTypeForm] = useState<ExpenseTypeFormData>(emptyTypeForm);
-  const [deleteTypeTarget, setDeleteTypeTarget] = useState<ExpenseType | null>(null);
+  const applyPreset = (p: RangePreset) => {
+    setPreset(p);
+    if (p !== 'custom') {
+      const r = rangeFor(p);
+      setStartDate(r.startDate);
+      setEndDate(r.endDate);
+    }
+    setPage(1);
+  };
 
-  // --- Data Fetching ---
+  const clearFilters = () => {
+    setVehicleFilter('all');
+    setTypeFilter('all');
+    setSearch('');
+    setPage(1);
+  };
+
+  /* ── Data ─────────────────────────────────────────────────────────────── */
 
   const { data: summary } = useQuery({
     queryKey: ['expenses-summary', startDate, endDate],
     queryFn: async () => {
-      const res = await api.get('/expenses-summary', {
-        params: { startDate, endDate },
-      });
-      return res.data as ExpenseSummary;
+      const res = await api.get('/expenses-summary', { params: { startDate, endDate } });
+      return (res?.data ?? res) as ExpenseSummary;
     },
   });
 
@@ -141,26 +173,37 @@ export default function ShpenzimetPage() {
 
   const { data: vehiclesData } = useQuery({
     queryKey: ['vehicles'],
-    queryFn: async () => {
-      const res = await api.get('/vehicles');
-      return res.data as Vehicle[];
-    },
+    queryFn: async () => unwrapList<Vehicle>(await api.get('/vehicles')),
   });
 
   const { data: expenseTypesData } = useQuery({
     queryKey: ['expense-types'],
-    queryFn: async () => {
-      const res = await api.get('/expense-types');
-      return res.data as ExpenseType[];
-    },
+    queryFn: async () => unwrapList<ExpenseType>(await api.get('/expense-types')),
   });
 
-  const vehicles = vehiclesData ?? [];
-  const expenseTypes = expenseTypesData ?? [];
+  const vehicles = Array.isArray(vehiclesData) ? vehiclesData : [];
+  const expenseTypes = Array.isArray(expenseTypesData) ? expenseTypesData : [];
+  const activeTypes = expenseTypes.filter((t) => t.isActive);
   const expenses = expensesData?.data ?? [];
   const pagination = expensesData?.pagination;
 
-  // --- Mutations ---
+  /* ── Breakdowns ───────────────────────────────────────────────────────── */
+
+  const topByType = useMemo(() => {
+    const entries = Object.entries(summary?.byType ?? {});
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries.slice(0, 5);
+  }, [summary]);
+
+  const topByVehicle = useMemo(() => {
+    const entries = Object.entries(summary?.byVehicle ?? {});
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries.slice(0, 5);
+  }, [summary]);
+
+  const total = summary?.totalAmount ?? 0;
+
+  /* ── Mutations ────────────────────────────────────────────────────────── */
 
   const createExpense = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.post('/expenses', data),
@@ -190,32 +233,7 @@ export default function ShpenzimetPage() {
     },
   });
 
-  const createExpenseType = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.post('/expense-types', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expense-types'] });
-      closeTypeForm();
-    },
-  });
-
-  const updateExpenseType = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      api.put(`/expense-types/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expense-types'] });
-      closeTypeForm();
-    },
-  });
-
-  const deleteExpenseType = useMutation({
-    mutationFn: (id: string) => api.delete(`/expense-types/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expense-types'] });
-      setDeleteTypeTarget(null);
-    },
-  });
-
-  // --- Handlers ---
+  /* ── Handlers ─────────────────────────────────────────────────────────── */
 
   const openNewExpense = useCallback(() => {
     setEditingExpense(null);
@@ -249,7 +267,6 @@ export default function ShpenzimetPage() {
       description: expenseForm.description || undefined,
     };
     if (expenseForm.vehicleId) payload.vehicleId = expenseForm.vehicleId;
-
     if (editingExpense) {
       updateExpense.mutate({ id: editingExpense.id, data: payload });
     } else {
@@ -257,93 +274,71 @@ export default function ShpenzimetPage() {
     }
   }, [expenseForm, editingExpense, createExpense, updateExpense]);
 
-  const closeTypeForm = useCallback(() => {
-    setTypeFormOpen(false);
-    setEditingType(null);
-    setTypeForm(emptyTypeForm);
-  }, []);
+  const isExpenseSubmitting = createExpense.isPending || updateExpense.isPending;
+  const anyFilterActive = vehicleFilter !== 'all' || typeFilter !== 'all' || !!search;
 
-  const openNewType = useCallback(() => {
-    setEditingType(null);
-    setTypeForm(emptyTypeForm);
-    setTypeFormOpen(true);
-  }, []);
-
-  const openEditType = useCallback((t: ExpenseType) => {
-    setEditingType(t);
-    setTypeForm({ name: t.name, isActive: t.isActive });
-    setTypeFormOpen(true);
-  }, []);
-
-  const handleTypeSubmit = useCallback(() => {
-    const payload = { name: typeForm.name, isActive: typeForm.isActive };
-    if (editingType) {
-      updateExpenseType.mutate({ id: editingType.id, data: payload });
-    } else {
-      createExpenseType.mutate(payload);
-    }
-  }, [typeForm, editingType, createExpenseType, updateExpenseType]);
-
-  // --- Top expense type & vehicle from summary ---
-  const topExpenseType = useMemo(() => {
-    if (!summary?.byType) return '-';
-    const entries = Object.entries(summary.byType);
-    if (entries.length === 0) return '-';
-    entries.sort((a, b) => b[1] - a[1]);
-    const [name, amount] = entries[0];
-    return `${name} (${formatCurrency(amount)})`;
-  }, [summary]);
-
-  const topVehicle = useMemo(() => {
-    if (!summary?.byVehicle) return '-';
-    const entries = Object.entries(summary.byVehicle);
-    if (entries.length === 0) return '-';
-    entries.sort((a, b) => b[1] - a[1]);
-    const [name, amount] = entries[0];
-    return `${name} (${formatCurrency(amount)})`;
-  }, [summary]);
-
-  // --- Table Columns ---
+  /* ── Table ────────────────────────────────────────────────────────────── */
 
   const columns = useMemo<ColumnDef<Expense, unknown>[]>(
     () => [
       {
         accessorKey: 'date',
         header: 'Data',
-        cell: ({ row }) => formatDate(row.original.date),
+        cell: ({ row }) => (
+          <span className="tabular-nums text-slate-700">{formatDate(row.original.date)}</span>
+        ),
       },
       {
         id: 'expenseType',
         header: 'Lloji',
-        cell: ({ row }) => row.original.expenseType?.name ?? '-',
+        cell: ({ row }) =>
+          row.original.expenseType?.name ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-0.5 text-[11.5px] font-medium text-slate-700">
+              <Tag className="h-3 w-3 text-slate-500" />
+              {row.original.expenseType.name}
+            </span>
+          ) : (
+            <span className="text-slate-400">—</span>
+          ),
       },
       {
         id: 'vehicle',
         header: 'Automjeti',
         cell: ({ row }) => {
           const v = row.original.vehicle;
-          return v ? `${v.make} ${v.model ?? ''} (${v.plateNumber})` : '-';
+          return v ? (
+            <span className="inline-flex items-center gap-1.5 text-slate-700">
+              <Car className="h-3.5 w-3.5 text-slate-400" />
+              <span className="truncate">
+                {v.make} {v.model ?? ''} <span className="text-slate-400">·</span> {v.plateNumber}
+              </span>
+            </span>
+          ) : (
+            <span className="text-slate-400">—</span>
+          );
         },
       },
       {
         accessorKey: 'amount',
         header: 'Shuma',
         cell: ({ row }) => (
-          <span className="font-medium">{formatCurrency(row.original.amount)}</span>
+          <span className="font-semibold tabular-nums text-slate-900">
+            {formatCurrency(row.original.amount)}
+          </span>
         ),
       },
       {
         accessorKey: 'description',
         header: 'Përshkrimi',
         cell: ({ row }) => (
-          <span className="max-w-[200px] truncate block text-sm text-muted-foreground">
-            {row.original.description || '-'}
+          <span className="block max-w-[260px] truncate text-sm text-slate-500">
+            {row.original.description || '—'}
           </span>
         ),
       },
       {
         id: 'actions',
-        header: 'Veprimet',
+        header: '',
         cell: ({ row }) => (
           <div className="flex items-center gap-1">
             <Button
@@ -351,14 +346,16 @@ export default function ShpenzimetPage() {
               size="icon"
               className="h-8 w-8"
               onClick={() => openEditExpense(row.original)}
+              aria-label="Edito"
             >
               <Pencil className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-destructive"
+              className="h-8 w-8 text-rose-600 hover:text-rose-700"
               onClick={() => setDeleteTarget(row.original)}
+              aria-label="Fshi"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -369,8 +366,7 @@ export default function ShpenzimetPage() {
     [openEditExpense]
   );
 
-  const isExpenseSubmitting = createExpense.isPending || updateExpense.isPending;
-  const isTypeSubmitting = createExpenseType.isPending || updateExpenseType.isPending;
+  /* ── Render ───────────────────────────────────────────────────────────── */
 
   return (
     <div className="space-y-6">
@@ -387,153 +383,210 @@ export default function ShpenzimetPage() {
             ...(typeFilter !== 'all' ? { expense_type_id: typeFilter } : {}),
           }}
         />
-        <Button variant="outline" onClick={() => setTypesDialogOpen(true)}>
-          <Settings2 className="mr-2 h-4 w-4" />
-          Llojet e Shpenzimeve
-        </Button>
+        <Link
+          href="/dashboard/shpenzimet/llojet"
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+        >
+          <Settings2 className="h-4 w-4" />
+          Llojet
+        </Link>
         <Button onClick={openNewExpense}>
           <Plus className="mr-2 h-4 w-4" />
           Shto Shpenzim
         </Button>
       </PageHeader>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Shpenzimeve
-            </CardTitle>
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(summary?.totalAmount ?? 0)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {summary?.totalCount ?? 0} shpenzime gjithsej
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Sipas Llojit
-            </CardTitle>
-            <Tag className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-semibold truncate">{topExpenseType}</div>
-            <p className="text-xs text-muted-foreground">
-              Lloji më i lartë
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Sipas Automjetit
-            </CardTitle>
-            <Car className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-semibold truncate">{topVehicle}</div>
-            <p className="text-xs text-muted-foreground">
-              Automjeti më i shpenzuar
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="startDate">Nga data</Label>
+      {/* Date range presets + custom range */}
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
+        <span className="hidden items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500 lg:inline-flex">
+          <CalendarIcon className="h-3.5 w-3.5" /> Periudha
+        </span>
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          {PRESETS.map((p) => (
+            <FilterChip
+              key={p.id}
+              label={p.label}
+              active={preset === p.id}
+              onClick={() => applyPreset(p.id)}
+            />
+          ))}
+          <FilterChip
+            label="Periudhë…"
+            active={preset === 'custom'}
+            onClick={() => setPreset('custom')}
+          />
+        </div>
+        <div
+          className={cn(
+            'flex items-center gap-2 transition-opacity lg:ml-auto',
+            preset === 'custom' ? 'opacity-100' : 'opacity-60'
+          )}
+        >
           <Input
-            id="startDate"
             type="date"
             value={startDate}
-            onChange={(e) => {
-              setStartDate(e.target.value);
-              setPage(1);
-            }}
-            className="w-[160px]"
+            onChange={(e) => { setStartDate(e.target.value); setPreset('custom'); setPage(1); }}
+            className="w-[150px]"
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="endDate">Deri më</Label>
+          <span className="text-slate-400">→</span>
           <Input
-            id="endDate"
             type="date"
             value={endDate}
-            onChange={(e) => {
-              setEndDate(e.target.value);
-              setPage(1);
-            }}
-            className="w-[160px]"
+            onChange={(e) => { setEndDate(e.target.value); setPreset('custom'); setPage(1); }}
+            className="w-[150px]"
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Automjeti</Label>
-          <Select
-            value={vehicleFilter}
-            onValueChange={(val) => {
-              setVehicleFilter(val);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Të gjithë" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Të gjithë</SelectItem>
-              {vehicles.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.make} {v.model ?? ''} ({v.plateNumber})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Lloji</Label>
-          <Select
-            value={typeFilter}
-            onValueChange={(val) => {
-              setTypeFilter(val);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Të gjithë" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Të gjithë</SelectItem>
-              {expenseTypes
-                .filter((t) => t.isActive)
-                .map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
-      {/* Data Table */}
+      {/* KPI tiles */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          icon={Receipt}
+          tone="rose"
+          label="Total Shpenzimeve"
+          value={formatCurrency(total)}
+          footer={<span className="text-xs text-slate-500">në periudhën e zgjedhur</span>}
+        />
+        <KpiCard
+          icon={Receipt}
+          tone="slate"
+          label="Nr. Shpenzime"
+          value={String(summary?.totalCount ?? 0)}
+          footer={
+            <span className="text-xs text-slate-500">
+              {summary?.totalCount
+                ? `Mesatarja ${formatCurrency(total / summary.totalCount)}/shpenzim`
+                : 'Asnjë regjistrim'}
+            </span>
+          }
+        />
+        <KpiCard
+          icon={Tag}
+          tone="amber"
+          label="Lloji më i lartë"
+          value={topByType[0]?.[0] ?? '—'}
+          footer={
+            topByType[0] ? (
+              <span className="text-xs text-slate-500">{formatCurrency(topByType[0][1])} · {Math.round((topByType[0][1] / (total || 1)) * 100)}% e totalit</span>
+            ) : (
+              <span className="text-xs text-slate-400">Asnjë lloj</span>
+            )
+          }
+        />
+        <KpiCard
+          icon={Car}
+          tone="blue"
+          label="Automjeti më i shpenzuar"
+          value={topByVehicle[0]?.[0] ?? '—'}
+          footer={
+            topByVehicle[0] ? (
+              <span className="text-xs text-slate-500">{formatCurrency(topByVehicle[0][1])} · {Math.round((topByVehicle[0][1] / (total || 1)) * 100)}% e totalit</span>
+            ) : (
+              <span className="text-xs text-slate-400">Pa automjet</span>
+            )
+          }
+        />
+      </div>
+
+      {/* Breakdown panels */}
+      {(topByType.length > 0 || topByVehicle.length > 0) && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <BreakdownPanel
+            title="Sipas Llojit"
+            icon={Tag}
+            items={topByType}
+            total={total}
+            tone="amber"
+            isActive={(name) => {
+              const t = expenseTypes.find((x) => x.name === name);
+              return t ? typeFilter === t.id : false;
+            }}
+            onItemClick={(name) => {
+              const t = expenseTypes.find((x) => x.name === name);
+              if (!t) return;
+              setTypeFilter(typeFilter === t.id ? 'all' : t.id);
+              setPage(1);
+            }}
+          />
+          <BreakdownPanel
+            title="Sipas Automjetit"
+            icon={Car}
+            items={topByVehicle}
+            total={total}
+            tone="blue"
+            isActive={(name) => {
+              const v = vehicles.find((x) => labelForVehicle(x) === name);
+              return v ? vehicleFilter === v.id : false;
+            }}
+            onItemClick={(name) => {
+              const v = vehicles.find((x) => labelForVehicle(x) === name);
+              if (!v) return;
+              setVehicleFilter(vehicleFilter === v.id ? 'all' : v.id);
+              setPage(1);
+            }}
+          />
+        </div>
+      )}
+
+      {/* Filter toolbar */}
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Kërko në shpenzime…"
+            className="pl-9"
+          />
+        </div>
+        <Select
+          value={vehicleFilter}
+          onValueChange={(val) => { setVehicleFilter(val); setPage(1); }}
+        >
+          <SelectTrigger className="w-full lg:w-[200px]">
+            <Car className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
+            <SelectValue placeholder="Të gjitha automjetet" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Të gjitha automjetet</SelectItem>
+            {vehicles.map((v) => (
+              <SelectItem key={v.id} value={v.id}>{labelForVehicle(v)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={typeFilter}
+          onValueChange={(val) => { setTypeFilter(val); setPage(1); }}
+        >
+          <SelectTrigger className="w-full lg:w-[180px]">
+            <Tag className="mr-1.5 h-3.5 w-3.5 text-slate-400" />
+            <SelectValue placeholder="Të gjithë llojet" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Të gjithë llojet</SelectItem>
+            {activeTypes.map((t) => (
+              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {anyFilterActive && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="h-9 shrink-0 text-slate-600"
+          >
+            <X className="mr-1 h-3.5 w-3.5" />
+            Pastro
+          </Button>
+        )}
+      </div>
+
+      {/* Table */}
       <DataTable
         columns={columns}
         data={expenses}
         isLoading={isLoading}
-        searchPlaceholder="Kërko shpenzime..."
-        searchValue={search}
-        onSearch={(val) => {
-          setSearch(val);
-          setPage(1);
-        }}
         pagination={
           pagination
             ? {
@@ -542,10 +595,7 @@ export default function ShpenzimetPage() {
                 totalItems: pagination.total,
                 pageSize: pagination.perPage,
                 onPageChange: setPage,
-                onPageSizeChange: (size) => {
-                  setPageSize(size);
-                  setPage(1);
-                },
+                onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
               }
             : undefined
         }
@@ -555,9 +605,7 @@ export default function ShpenzimetPage() {
       <Dialog open={expenseDialogOpen} onOpenChange={setExpenseDialogOpen}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>
-              {editingExpense ? 'Edito Shpenzimin' : 'Shto Shpenzim'}
-            </DialogTitle>
+            <DialogTitle>{editingExpense ? 'Edito Shpenzimin' : 'Shto Shpenzim'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-1.5">
@@ -566,42 +614,39 @@ export default function ShpenzimetPage() {
                 id="expense-date"
                 type="date"
                 value={expenseForm.date}
-                onChange={(e) =>
-                  setExpenseForm((f) => ({ ...f, date: e.target.value }))
-                }
+                onChange={(e) => setExpenseForm((f) => ({ ...f, date: e.target.value }))}
               />
             </div>
             <div className="space-y-1.5">
               <Label>Lloji i shpenzimit</Label>
               <Select
                 value={expenseForm.expenseTypeId || ''}
-                onValueChange={(val) =>
-                  setExpenseForm((f) => ({ ...f, expenseTypeId: val }))
-                }
+                onValueChange={(val) => setExpenseForm((f) => ({ ...f, expenseTypeId: val }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Zgjedh llojin" />
                 </SelectTrigger>
                 <SelectContent>
-                  {expenseTypes
-                    .filter((t) => t.isActive)
-                    .map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
+                  {activeTypes.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {activeTypes.length === 0 && (
+                <p className="text-[11px] text-amber-600">
+                  Nuk keni lloje aktive të shpenzimeve.{' '}
+                  <Link href="/dashboard/shpenzimet/llojet" className="font-medium underline">
+                    Krijoni një tani →
+                  </Link>
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Automjeti (opsionale)</Label>
               <Select
                 value={expenseForm.vehicleId || 'none'}
                 onValueChange={(val) =>
-                  setExpenseForm((f) => ({
-                    ...f,
-                    vehicleId: val === 'none' ? '' : val,
-                  }))
+                  setExpenseForm((f) => ({ ...f, vehicleId: val === 'none' ? '' : val }))
                 }
               >
                 <SelectTrigger>
@@ -610,9 +655,7 @@ export default function ShpenzimetPage() {
                 <SelectContent>
                   <SelectItem value="none">Asnjë</SelectItem>
                   {vehicles.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      {v.make} {v.model ?? ''} ({v.plateNumber})
-                    </SelectItem>
+                    <SelectItem key={v.id} value={v.id}>{labelForVehicle(v)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -625,9 +668,7 @@ export default function ShpenzimetPage() {
                 min="0"
                 step="0.01"
                 value={expenseForm.amount}
-                onChange={(e) =>
-                  setExpenseForm((f) => ({ ...f, amount: e.target.value }))
-                }
+                onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))}
                 placeholder="0.00"
               />
             </div>
@@ -636,18 +677,14 @@ export default function ShpenzimetPage() {
               <Textarea
                 id="expense-desc"
                 value={expenseForm.description}
-                onChange={(e) =>
-                  setExpenseForm((f) => ({ ...f, description: e.target.value }))
-                }
-                placeholder="Përshkrimi i shpenzimit..."
+                onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Përshkrimi i shpenzimit…"
                 rows={3}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeExpenseDialog}>
-              Anulo
-            </Button>
+            <Button variant="outline" onClick={closeExpenseDialog}>Anulo</Button>
             <Button
               onClick={handleExpenseSubmit}
               disabled={
@@ -657,13 +694,12 @@ export default function ShpenzimetPage() {
                 !expenseForm.amount
               }
             >
-              {isExpenseSubmitting ? 'Duke ruajtur...' : 'Ruaj'}
+              {isExpenseSubmitting ? 'Duke ruajtur…' : 'Ruaj'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Expense Confirm */}
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
@@ -674,138 +710,86 @@ export default function ShpenzimetPage() {
         variant="destructive"
         onConfirm={() => deleteTarget && deleteExpense.mutate(deleteTarget.id)}
       />
-
-      {/* Expense Types Management Dialog */}
-      <Dialog open={typesDialogOpen} onOpenChange={setTypesDialogOpen}>
-        <DialogContent className="sm:max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle>Llojet e Shpenzimeve</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="flex justify-end">
-              <Button size="sm" onClick={openNewType}>
-                <Plus className="mr-2 h-4 w-4" />
-                Shto Lloj
-              </Button>
-            </div>
-            <div className="rounded-md border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-2 text-left font-medium">Emri</th>
-                    <th className="px-4 py-2 text-left font-medium">Statusi</th>
-                    <th className="px-4 py-2 text-right font-medium">
-                      Veprimet
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expenseTypes.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={3}
-                        className="px-4 py-6 text-center text-muted-foreground"
-                      >
-                        Nuk ka lloje të shpenzimeve.
-                      </td>
-                    </tr>
-                  ) : (
-                    expenseTypes.map((t) => (
-                      <tr key={t.id} className="border-b last:border-0">
-                        <td className="px-4 py-2">{t.name}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant={t.isActive ? 'success' : 'muted'}>
-                            {t.isActive ? 'Aktiv' : 'Joaktiv'}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => openEditType(t)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive"
-                              onClick={() => setDeleteTypeTarget(t)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add/Edit Expense Type Dialog */}
-      <Dialog open={typeFormOpen} onOpenChange={setTypeFormOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>
-              {editingType ? 'Edito Llojin' : 'Shto Lloj të Re'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="type-name">Emri</Label>
-              <Input
-                id="type-name"
-                value={typeForm.name}
-                onChange={(e) =>
-                  setTypeForm((f) => ({ ...f, name: e.target.value }))
-                }
-                placeholder="Emri i llojit të shpenzimit"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="type-active">Aktiv</Label>
-              <Switch
-                id="type-active"
-                checked={typeForm.isActive}
-                onCheckedChange={(val) =>
-                  setTypeForm((f) => ({ ...f, isActive: val }))
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeTypeForm}>
-              Anulo
-            </Button>
-            <Button
-              onClick={handleTypeSubmit}
-              disabled={isTypeSubmitting || !typeForm.name.trim()}
-            >
-              {isTypeSubmitting ? 'Duke ruajtur...' : 'Ruaj'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Expense Type Confirm */}
-      <ConfirmDialog
-        open={!!deleteTypeTarget}
-        onOpenChange={(open) => !open && setDeleteTypeTarget(null)}
-        title="Fshi Llojin e Shpenzimit"
-        description={`A jeni të sigurt që doni ta fshini llojin "${deleteTypeTarget?.name ?? ''}"?`}
-        confirmText="Fshi"
-        cancelText="Anulo"
-        variant="destructive"
-        onConfirm={() =>
-          deleteTypeTarget && deleteExpenseType.mutate(deleteTypeTarget.id)
-        }
-      />
     </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+function labelForVehicle(v: Vehicle) {
+  return `${v.make}${v.model ? ' ' + v.model : ''} (${v.plateNumber})`;
+}
+
+function BreakdownPanel({
+  title,
+  icon: Icon,
+  items,
+  total,
+  tone,
+  isActive,
+  onItemClick,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  items: [string, number][];
+  total: number;
+  tone: 'amber' | 'blue';
+  isActive: (name: string) => boolean;
+  onItemClick: (name: string) => void;
+}) {
+  const barColor = tone === 'amber' ? 'bg-amber-500' : 'bg-blue-500';
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+        <h2 className="inline-flex items-center gap-2 text-[13px] font-semibold tracking-tight text-slate-900">
+          <Icon className="h-4 w-4 text-slate-400" />
+          {title}
+        </h2>
+        <span className="text-[11px] uppercase tracking-wider text-slate-400">Top {items.length}</span>
+      </div>
+      <div className="p-4">
+        {items.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-500">Nuk ka të dhëna</p>
+        ) : (
+          <ul className="space-y-2.5">
+            {items.map(([name, amount]) => {
+              const pct = total > 0 ? (amount / total) * 100 : 0;
+              const active = isActive(name);
+              return (
+                <li key={name}>
+                  <button
+                    type="button"
+                    onClick={() => onItemClick(name)}
+                    className={cn(
+                      'group flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition',
+                      active ? 'bg-slate-100' : 'hover:bg-slate-50'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate text-[13px] font-medium',
+                        active ? 'text-slate-900' : 'text-slate-700'
+                      )}
+                    >
+                      {name}
+                    </span>
+                    <span className="tabular-nums text-[13px] font-semibold text-slate-900">
+                      {formatCurrency(amount)}
+                    </span>
+                    <span className="w-10 shrink-0 text-right text-[10.5px] font-medium tabular-nums text-slate-400">
+                      {Math.round(pct)}%
+                    </span>
+                  </button>
+                  <div className="ml-2 mr-12 mt-0.5 h-1 overflow-hidden rounded-full bg-slate-100">
+                    <div className={cn('h-full rounded-full', barColor)} style={{ width: `${Math.max(2, pct)}%` }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </Card>
   );
 }
