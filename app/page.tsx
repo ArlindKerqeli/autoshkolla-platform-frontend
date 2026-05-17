@@ -805,7 +805,7 @@ function Footer() {
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Kontakt</div>
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
             <li className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-slate-400" /> kontakt@autoshkolla-platform.com</li>
-            <li className="inline-flex items-center gap-2"><Award className="h-3.5 w-3.5 text-slate-400" /> Prishtinë, Kosovë</li>
+            <li className="inline-flex items-center gap-2"><Award className="h-3.5 w-3.5 text-slate-400" /> Ferizaj, Kosovë</li>
           </ul>
         </div>
       </div>
