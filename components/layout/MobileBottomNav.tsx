@@ -20,7 +20,7 @@ interface MobileBottomNavProps {
 }
 
 export function MobileBottomNav({ items, onMenuClick, accentColor = 'text-blue-600' }: MobileBottomNavProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
 
   const isActive = (item: BottomNavItem) => {
     if (item.exactMatch) return pathname === item.href;
