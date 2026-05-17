@@ -12,6 +12,7 @@ import {
   BadgeCheck,
   Car,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CreditCard,
   Filter,
@@ -26,7 +27,7 @@ import type { DashboardAlert } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 /* ────────────────────────────────────────────────────────────────────────────
-   Alert metadata — keep this in one place
+   Metadata
    ──────────────────────────────────────────────────────────────────────────── */
 
 type AlertGroup = 'Pagesat' | 'Automjetet' | 'Instruktorët';
@@ -44,6 +45,7 @@ const TYPE_META: Record<
 };
 
 const ALL_GROUPS: AlertGroup[] = ['Pagesat', 'Automjetet', 'Instruktorët'];
+const VISIBLE_PER_GROUP = 8;
 
 type SeverityFilter = 'all' | 'error' | 'warning' | 'info';
 type GroupFilter = 'all' | AlertGroup;
@@ -65,25 +67,28 @@ function getAlertLink(alert: DashboardAlert): string | null {
 }
 
 const SEVERITY_STYLES = {
-  error: {
-    dot: 'bg-rose-500',
-    bar: 'bg-rose-500',
-    chip: 'bg-rose-50 text-rose-700 ring-rose-200',
-    icon: 'bg-rose-50 text-rose-600',
-  },
-  warning: {
-    dot: 'bg-amber-500',
-    bar: 'bg-amber-500',
-    chip: 'bg-amber-50 text-amber-700 ring-amber-200',
-    icon: 'bg-amber-50 text-amber-600',
-  },
-  info: {
-    dot: 'bg-sky-500',
-    bar: 'bg-sky-500',
-    chip: 'bg-sky-50 text-sky-700 ring-sky-200',
-    icon: 'bg-sky-50 text-sky-600',
-  },
+  error:   { bar: 'bg-rose-500',  icon: 'bg-rose-50 text-rose-600 ring-rose-200',     daysClass: 'text-rose-700 bg-rose-50 ring-rose-200' },
+  warning: { bar: 'bg-amber-500', icon: 'bg-amber-50 text-amber-600 ring-amber-200',  daysClass: 'text-amber-700 bg-amber-50 ring-amber-200' },
+  info:    { bar: 'bg-sky-500',   icon: 'bg-sky-50 text-sky-600 ring-sky-200',        daysClass: 'text-sky-700 bg-sky-50 ring-sky-200' },
 } as const;
+
+/** Pull structured fields out of well-known message formats. */
+function parseMessage(alert: DashboardAlert): {
+  title: string;
+  amount?: string;
+  days?: number;
+  trailing?: string;
+} {
+  if (alert.type === 'overdue_payment') {
+    const m = alert.message.match(/^(.+?)\s+ka borxh\s+(€[\d.,]+)\s+\((\d+)\s+ditë pa paguar\)\s*$/);
+    if (m) return { title: m[1], amount: m[2], days: parseInt(m[3], 10) };
+  }
+  if (alert.type === 'instructor_high_debt') {
+    const m = alert.message.match(/^(.+?)\s+ka borxh\s+(€[\d.,]+)/);
+    if (m) return { title: m[1], amount: m[2], trailing: alert.message.slice(m[0].length).trim() };
+  }
+  return { title: alert.message };
+}
 
 /* ────────────────────────────────────────────────────────────────────────────
    Page
@@ -93,25 +98,19 @@ export default function AlarmetPage() {
   const [severity, setSeverity] = useState<SeverityFilter>('all');
   const [group, setGroup] = useState<GroupFilter>('all');
   const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const { data: alerts = [], isLoading } = useQuery<DashboardAlert[]>({
     queryKey: ['dashboard-alerts'],
-    queryFn: async () => {
-      const res = await api.get('/dashboard/alerts');
-      return res.data;
-    },
+    queryFn: async () => (await api.get('/dashboard/alerts')).data,
   });
 
-  /* Counts for the summary tiles */
   const counts = useMemo(() => {
     const c = { total: alerts.length, error: 0, warning: 0, info: 0 };
-    alerts.forEach((a) => {
-      c[a.severity] += 1;
-    });
+    alerts.forEach((a) => (c[a.severity] += 1));
     return c;
   }, [alerts]);
 
-  /* Filtered list */
   const filtered = useMemo(() => {
     return alerts.filter((a) => {
       if (severity !== 'all' && a.severity !== severity) return false;
@@ -124,7 +123,6 @@ export default function AlarmetPage() {
     });
   }, [alerts, severity, group, query]);
 
-  /* Group filtered alerts by their group */
   const grouped = useMemo(() => {
     const map = new Map<AlertGroup, DashboardAlert[]>();
     filtered.forEach((a) => {
@@ -132,11 +130,24 @@ export default function AlarmetPage() {
       if (!map.has(g)) map.set(g, []);
       map.get(g)!.push(a);
     });
-    // Sort each group internally: error → warning → info
-    const sev = { error: 0, warning: 1, info: 2 };
-    map.forEach((list) => list.sort((x, y) => sev[x.severity] - sev[y.severity]));
+    const sevRank = { error: 0, warning: 1, info: 2 };
+    map.forEach((list) =>
+      list.sort((x, y) => {
+        const rs = sevRank[x.severity] - sevRank[y.severity];
+        if (rs !== 0) return rs;
+        const px = parseMessage(x);
+        const py = parseMessage(y);
+        // Within same severity: more days overdue first, then alphabetical
+        const dx = px.days ?? -1;
+        const dy = py.days ?? -1;
+        if (dx !== dy) return dy - dx;
+        return px.title.localeCompare(py.title);
+      })
+    );
     return map;
   }, [filtered]);
+
+  const anyExpanded = Object.values(expanded).some(Boolean);
 
   return (
     <div className="space-y-6">
@@ -153,14 +164,23 @@ export default function AlarmetPage() {
             Të gjitha problemet që kërkojnë vëmendje — pagesa në vonesë, dokumente që po skadojnë, borxhe të mëdha.
           </p>
         </div>
+        {anyExpanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded({})}
+            className="self-start rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Përmblidh të gjitha
+          </button>
+        )}
       </div>
 
-      {/* Summary tiles */}
+      {/* Summary tiles (also act as severity filters) */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryTile label="Gjithsej" value={counts.total} tone="slate" icon={AlertTriangle} active={severity === 'all'} onClick={() => setSeverity('all')} />
-        <SummaryTile label="Kritike"   value={counts.error}   tone="error"   icon={AlertTriangle} active={severity === 'error'}   onClick={() => setSeverity(severity === 'error' ? 'all' : 'error')} />
-        <SummaryTile label="Paralajmërime" value={counts.warning} tone="warning" icon={AlertTriangle} active={severity === 'warning'} onClick={() => setSeverity(severity === 'warning' ? 'all' : 'warning')} />
-        <SummaryTile label="Informuese" value={counts.info}    tone="info"    icon={AlertTriangle} active={severity === 'info'}    onClick={() => setSeverity(severity === 'info' ? 'all' : 'info')} />
+        <SummaryTile label="Gjithsej"      value={counts.total}   tone="slate"   active={severity === 'all'}     onClick={() => setSeverity('all')} />
+        <SummaryTile label="Kritike"        value={counts.error}   tone="error"   active={severity === 'error'}   onClick={() => setSeverity(severity === 'error' ? 'all' : 'error')} />
+        <SummaryTile label="Paralajmërime" value={counts.warning} tone="warning" active={severity === 'warning'} onClick={() => setSeverity(severity === 'warning' ? 'all' : 'warning')} />
+        <SummaryTile label="Informuese"    value={counts.info}    tone="info"    active={severity === 'info'}    onClick={() => setSeverity(severity === 'info' ? 'all' : 'info')} />
       </div>
 
       {/* Filter bar */}
@@ -198,6 +218,10 @@ export default function AlarmetPage() {
         <div className="space-y-6">
           {ALL_GROUPS.filter((g) => grouped.has(g)).map((g) => {
             const list = grouped.get(g)!;
+            const isExpanded = expanded[g] === true;
+            const visible = isExpanded ? list : list.slice(0, VISIBLE_PER_GROUP);
+            const hidden = list.length - visible.length;
+
             return (
               <section key={g}>
                 <div className="mb-2 flex items-center gap-2 px-1">
@@ -206,11 +230,34 @@ export default function AlarmetPage() {
                     {list.length}
                   </span>
                 </div>
+
                 <Card className="divide-y divide-slate-100 overflow-hidden">
-                  {list.map((alert, i) => (
+                  {visible.map((alert, i) => (
                     <AlertRow key={`${alert.type}-${alert.entityId}-${i}`} alert={alert} />
                   ))}
                 </Card>
+
+                {(hidden > 0 || isExpanded) && (
+                  <div className="mt-2 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((p) => ({ ...p, [g]: !p[g] }))}
+                      className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      {isExpanded ? (
+                        <>
+                          Shfaq vetëm {VISIBLE_PER_GROUP}
+                          <ChevronDown className="h-3.5 w-3.5 rotate-180 transition" />
+                        </>
+                      ) : (
+                        <>
+                          Shfaq edhe {hidden} {hidden === 1 ? 'alarm' : 'alarme'}
+                          <ChevronDown className="h-3.5 w-3.5 transition group-hover:translate-y-0.5" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </section>
             );
           })}
@@ -228,22 +275,20 @@ function SummaryTile({
   label,
   value,
   tone,
-  icon: Icon,
   active,
   onClick,
 }: {
   label: string;
   value: number;
   tone: 'slate' | 'error' | 'warning' | 'info';
-  icon: LucideIcon;
   active: boolean;
   onClick: () => void;
 }) {
-  const toneClasses = {
-    slate:   { bg: 'bg-slate-50',  fg: 'text-slate-700',  ring: 'ring-slate-200',  text: 'text-slate-900' },
-    error:   { bg: 'bg-rose-50',   fg: 'text-rose-600',   ring: 'ring-rose-200',   text: 'text-rose-700' },
-    warning: { bg: 'bg-amber-50',  fg: 'text-amber-600',  ring: 'ring-amber-200',  text: 'text-amber-700' },
-    info:    { bg: 'bg-sky-50',    fg: 'text-sky-600',    ring: 'ring-sky-200',    text: 'text-sky-700' },
+  const tones = {
+    slate:   { iconBg: 'bg-slate-100',  iconFg: 'text-slate-600',  ring: 'ring-slate-200',  label: 'text-slate-700' },
+    error:   { iconBg: 'bg-rose-50',    iconFg: 'text-rose-600',   ring: 'ring-rose-200',   label: 'text-rose-700' },
+    warning: { iconBg: 'bg-amber-50',   iconFg: 'text-amber-600',  ring: 'ring-amber-200',  label: 'text-amber-700' },
+    info:    { iconBg: 'bg-sky-50',     iconFg: 'text-sky-600',    ring: 'ring-sky-200',    label: 'text-sky-700' },
   }[tone];
 
   return (
@@ -256,11 +301,11 @@ function SummaryTile({
       )}
     >
       <div>
-        <div className={cn('text-xs font-semibold uppercase tracking-wider', toneClasses.text)}>{label}</div>
+        <div className={cn('text-xs font-semibold uppercase tracking-wider', tones.label)}>{label}</div>
         <div className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{value}</div>
       </div>
-      <span className={cn('grid h-10 w-10 place-items-center rounded-lg ring-1 ring-inset', toneClasses.bg, toneClasses.fg, toneClasses.ring)}>
-        <Icon className="h-5 w-5" />
+      <span className={cn('grid h-10 w-10 place-items-center rounded-lg ring-1 ring-inset', tones.iconBg, tones.iconFg, tones.ring)}>
+        <AlertTriangle className="h-5 w-5" />
       </span>
     </button>
   );
@@ -288,28 +333,41 @@ function AlertRow({ alert }: { alert: DashboardAlert }) {
   const Icon = meta.icon;
   const sev = SEVERITY_STYLES[alert.severity];
   const link = getAlertLink(alert);
+  const parsed = parseMessage(alert);
 
   const inner = (
-    <div className="relative flex items-center gap-3 px-4 py-3 transition group-hover:bg-slate-50/70">
+    <div className="relative grid grid-cols-[auto,1fr,auto] items-center gap-3 px-4 py-3 transition group-hover:bg-slate-50/70">
       {/* Severity bar */}
       <span className={cn('absolute inset-y-2 left-0 w-0.5 rounded-r-full', sev.bar)} aria-hidden />
       {/* Icon */}
-      <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-lg', sev.icon)}>
+      <span className={cn('grid h-9 w-9 place-items-center rounded-lg ring-1 ring-inset', sev.icon)}>
         <Icon className="h-[18px] w-[18px]" />
       </span>
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className={cn('inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 ring-inset', sev.chip)}>
-            {meta.label}
-          </span>
-        </div>
-        <p className="mt-1 truncate text-sm text-slate-800">{alert.message}</p>
+      {/* Title + secondary line */}
+      <div className="min-w-0">
+        <p className="truncate text-[13.5px] font-medium text-slate-900">{parsed.title}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-slate-500">{meta.label}{parsed.trailing ? ` · ${parsed.trailing}` : ''}</p>
       </div>
-      {/* Affordance */}
-      {link && (
-        <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
-      )}
+      {/* Right column: amount / days / chevron */}
+      <div className="flex items-center gap-2.5">
+        {parsed.amount && (
+          <span className="hidden text-sm font-bold tabular-nums text-slate-900 sm:inline">{parsed.amount}</span>
+        )}
+        {parsed.days !== undefined && (
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset tabular-nums',
+              sev.daysClass
+            )}
+            title={`${parsed.days} ditë pa paguar`}
+          >
+            {parsed.days} ditë
+          </span>
+        )}
+        {link && (
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
+        )}
+      </div>
     </div>
   );
 
