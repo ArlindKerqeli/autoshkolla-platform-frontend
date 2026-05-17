@@ -165,16 +165,7 @@ export default function BorxhiInstruktorevePage() {
       .slice(0, 3);
   }, [debtSummaries]);
 
-  /* ── Mutations ────────────────────────────────────────────────────────── */
-
-  const recordPayment = useMutation({
-    mutationFn: (data: { instructorId: string; payload: Record<string, unknown> }) =>
-      api.post(`/instructors/${data.instructorId}/payments`, data.payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['instructor-debt'] });
-      closePaymentDialog();
-    },
-  });
+  /* ── Handlers (declared before mutations so onSuccess can call them) ──── */
 
   const openPaymentDialog = useCallback((instructorId?: string) => {
     setPaymentForm({ ...emptyPaymentForm, instructorId: instructorId ?? '' });
@@ -185,6 +176,17 @@ export default function BorxhiInstruktorevePage() {
     setPaymentDialogOpen(false);
     setPaymentForm(emptyPaymentForm);
   }, []);
+
+  /* ── Mutations ────────────────────────────────────────────────────────── */
+
+  const recordPayment = useMutation({
+    mutationFn: (data: { instructorId: string; payload: Record<string, unknown> }) =>
+      api.post(`/instructors/${data.instructorId}/payments`, data.payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['instructor-debt'] });
+      closePaymentDialog();
+    },
+  });
 
   const handlePaymentSubmit = useCallback(() => {
     recordPayment.mutate({
@@ -419,7 +421,7 @@ export default function BorxhiInstruktorevePage() {
             <div className="space-y-1.5">
               <Label>Instruktori</Label>
               <Select
-                value={paymentForm.instructorId || ''}
+                value={paymentForm.instructorId || undefined}
                 onValueChange={(val) =>
                   setPaymentForm((f) => ({ ...f, instructorId: val, candidateId: '' }))
                 }
@@ -440,7 +442,7 @@ export default function BorxhiInstruktorevePage() {
             <div className="space-y-1.5">
               <Label>Kandidati</Label>
               <Select
-                value={paymentForm.candidateId || ''}
+                value={paymentForm.candidateId || undefined}
                 onValueChange={(val) => setPaymentForm((f) => ({ ...f, candidateId: val }))}
                 disabled={!paymentForm.instructorId}
               >
