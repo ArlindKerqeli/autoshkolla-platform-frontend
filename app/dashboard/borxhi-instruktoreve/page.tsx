@@ -97,8 +97,18 @@ export default function BorxhiInstruktorevePage() {
     queryKey: ['instructors-active'],
     queryFn: async () => {
       const res = await api.get('/instructors', { params: { active: true } });
-      const data = res.data ?? res;
-      return (Array.isArray(data) ? data : data.data ?? []) as Instructor[];
+      // Walk down nested `.data` properties until we hit an array. Handles
+      // {success, data: {data: [...], meta}}, {success, data: [...]}, and [...].
+      let list: unknown = res;
+      for (let i = 0; i < 3; i += 1) {
+        if (Array.isArray(list)) break;
+        if (list && typeof list === 'object' && 'data' in list) {
+          list = (list as { data: unknown }).data;
+        } else {
+          break;
+        }
+      }
+      return (Array.isArray(list) ? list : []) as Instructor[];
     },
     enabled: paymentDialogOpen,
   });
@@ -107,13 +117,22 @@ export default function BorxhiInstruktorevePage() {
     queryKey: ['instructor-candidates', paymentForm.instructorId],
     queryFn: async () => {
       const res = await api.get(`/instructors/${paymentForm.instructorId}/candidates`);
-      return res.data as Candidate[];
+      let list: unknown = res;
+      for (let i = 0; i < 3; i += 1) {
+        if (Array.isArray(list)) break;
+        if (list && typeof list === 'object' && 'data' in list) {
+          list = (list as { data: unknown }).data;
+        } else {
+          break;
+        }
+      }
+      return (Array.isArray(list) ? list : []) as Candidate[];
     },
     enabled: !!paymentForm.instructorId,
   });
 
-  const instructors = instructorsData ?? [];
-  const instructorCandidates = instructorCandidatesData ?? [];
+  const instructors = Array.isArray(instructorsData) ? instructorsData : [];
+  const instructorCandidates = Array.isArray(instructorCandidatesData) ? instructorCandidatesData : [];
 
   /* ── Aggregates ───────────────────────────────────────────────────────── */
 
